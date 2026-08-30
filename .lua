@@ -1,4 +1,4 @@
---Made by Pulse Hub / Discord.gg/pulsezone
+--Made by Pulse Hub / Discord.gg/pulsezone - v0.2
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -7289,14 +7289,19 @@ return Base.define({
         self.maid:Add(Theme.bind(avatar, "BackgroundColor3", "Elevated"))
 
         if Util.str(config.Icon, nil) and string.find(tostring(config.Icon), "://") then
-            P.image({
+            -- UICorner on the parent does not clip children, so the artwork needs
+            -- its own rounding or its square corners poke out of the avatar
+            local art = P.image({
                 Name = "Art",
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromScale(0.5, 0.5),
                 Size = UDim2.fromScale(1, 1),
                 Image = config.Icon,
                 ScaleType = Enum.ScaleType.Crop,
                 ZIndex = 5,
                 Parent = avatar,
             })
+            P.corner(art, 14)
         else
             Util.new("UIGradient", {
                 Rotation = 45,
