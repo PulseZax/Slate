@@ -1,4 +1,4 @@
---Made by Pulse Hub / Discord.gg/pulsezone - v0.21
+--Made by Pulse Hub / Discord.gg/pulsezone
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -7886,6 +7886,262 @@ return {
 }
 
 end
+Slate_modules["ui/Launcher"] = function(require)
+local Players = game:GetService("Players")
+local Util = require("core/Util")
+local Theme = require("core/Theme")
+local Motion = require("core/Motion")
+local Maid = require("core/Maid")
+local Input = require("core/Input")
+local P = require("ui/Primitives")
+local Icons = require("ui/Icons")
+
+local Launcher = {}
+Launcher.__index = Launcher
+
+local DEFAULT_SIZE = 44
+local DRAG_SLOP = 5
+local EDGE_PAD = 6
+
+local function host()
+    if typeof(gethui) == "function" then
+        local ok, result = pcall(gethui)
+        if ok and result then
+            return result
+        end
+    end
+    local ok, core = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+    if ok and core then
+        return core
+    end
+    local player = Players.LocalPlayer
+    return player and player:FindFirstChildOfClass("PlayerGui")
+end
+
+function Launcher.new(window, config)
+    local parent = host()
+    if not parent then
+        return nil
+    end
+    config = config or {}
+
+    local self = setmetatable({}, Launcher)
+    self.window = window
+    self.maid = Maid.new()
+    self.Size = math.floor(Util.clamp(Util.num(config.LauncherSize, DEFAULT_SIZE), 22, 96))
+
+    self.gui = Util.new("ScreenGui", {
+        Name = Util.str(config.LauncherGuiName, "SlateLauncher"),
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = Util.num(config.DisplayOrder, 999) + 1,
+        Parent = parent,
+    })
+    self.maid:Add(self.gui)
+    P.trackRoot(self.gui)
+    self.maid:Add(function()
+        P.untrackRoot(self.gui)
+    end)
+
+    local start = config.LauncherPosition
+    if typeof(start) ~= "UDim2" then
+        start = UDim2.new(0, 16, 0, 150)
+    end
+
+    self.root = P.frame({
+        Name = "Bubble",
+        Position = start,
+        Size = UDim2.fromOffset(self.Size, self.Size),
+        BackgroundTransparency = 0,
+        Parent = self.gui,
+    })
+    self.maid:Add(Theme.bind(self.root, "BackgroundColor3", "Surface"))
+    P.corner(self.root, math.floor(self.Size / 2))
+    local _, strokeBinding = P.stroke(self.root, "Border", 1, 0.85)
+    self.maid:Add(strokeBinding)
+
+    self.ring = P.frame({
+        Name = "Ring",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.new(1, 8, 1, 8),
+        BackgroundTransparency = 1,
+        ZIndex = 0,
+        Parent = self.root,
+    })
+    P.corner(self.ring, math.floor((self.Size + 8) / 2))
+    local ringStroke, ringBinding = P.stroke(self.ring, "Accent", 1, 0.55)
+    self.ringStroke = ringStroke
+    self.maid:Add(ringBinding)
+
+    self.glyphSlot = P.frame({
+        Name = "Glyph",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(self.Size - 18, self.Size - 18),
+        ZIndex = 3,
+        Parent = self.root,
+    })
+
+    self.hitbox = P.hitbox({
+        Name = "Grip",
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = 6,
+        Parent = self.root,
+    })
+
+    self:SetIcon(config.LauncherIcon or config.Icon or "layers")
+
+    self.maid:Add(P.interactive(self.hitbox, {
+        render = function(state)
+            Motion.hover(self.root, { BackgroundTransparency = state.hovered and 0.1 or 0 })
+        end,
+    }))
+
+    self:_setupDrag()
+    self:_paint()
+
+    self.root.BackgroundTransparency = 1
+    Motion.play(self.root, { BackgroundTransparency = 0 }, { duration = Motion.Duration.Fast })
+
+    return self
+end
+
+function Launcher:SetIcon(name)
+    if self.Destroyed then
+        return self
+    end
+    for _, child in ipairs(self.glyphSlot:GetChildren()) do
+        child:Destroy()
+    end
+    for _, binding in ipairs(self.iconBindings or {}) do
+        Theme.unbind(binding)
+    end
+    self.Icon = name
+    local glyph, bindings = Icons.create(name, {
+        size = math.max(10, self.Size - 18),
+        token = "Text",
+    })
+    self.iconBindings = bindings or {}
+    self.glyph = glyph
+    if glyph then
+        glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+        glyph.Position = UDim2.fromScale(0.5, 0.5)
+        glyph.ZIndex = 4
+        glyph.Parent = self.glyphSlot
+    end
+    self:_paint()
+    return self
+end
+
+function Launcher:_paint()
+    if self.Destroyed then
+        return
+    end
+    local open = self.window and not self.window.Hidden
+    if self.ringStroke then
+        Motion.play(self.ringStroke, { Transparency = open and 0.45 or 0.88 }, {
+            duration = Motion.Duration.Fast,
+        })
+    end
+    Icons.recolour(self.iconBindings, open and "Text" or "Muted")
+end
+
+function Launcher:_viewport()
+    local camera = workspace.CurrentCamera
+    return camera and camera.ViewportSize or Vector2.new(1280, 720)
+end
+
+function Launcher:_clamp()
+    local view = self:_viewport()
+    local position = self.root.Position
+    local x = position.X.Scale * view.X + position.X.Offset
+    local y = position.Y.Scale * view.Y + position.Y.Offset
+    x = Util.clamp(x, EDGE_PAD, math.max(EDGE_PAD, view.X - self.Size - EDGE_PAD))
+    y = Util.clamp(y, EDGE_PAD, math.max(EDGE_PAD, view.Y - self.Size - EDGE_PAD))
+    self.root.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+end
+
+function Launcher:_setupDrag()
+    local dragMaid = self.maid:Extend()
+    self.maid:Add(self.hitbox.MouseButton1Down:Connect(function()
+        if self.Destroyed then
+            return
+        end
+        -- the anchor is taken at press time and the origin is the UDim2 the frame
+        -- already has; measuring from AbsolutePosition instead makes the bubble
+        -- jump by the GUI inset the moment a drag starts
+        local anchor = Input.pointerPosition()
+        local origin = self.root.Position
+        local travel = 0
+        dragMaid:Clean()
+        dragMaid:Add(Input.PointerMoved:Connect(function(position)
+            if typeof(anchor) ~= "Vector2" then
+                anchor = position
+                return
+            end
+            local delta = position - anchor
+            travel = math.max(travel, math.abs(delta.X) + math.abs(delta.Y))
+            if travel <= DRAG_SLOP then
+                return
+            end
+            self.root.Position = UDim2.new(
+                origin.X.Scale, origin.X.Offset + delta.X,
+                origin.Y.Scale, origin.Y.Offset + delta.Y
+            )
+        end))
+        dragMaid:Add(Input.PointerUp:Connect(function()
+            dragMaid:Clean()
+            if travel > DRAG_SLOP then
+                self:_clamp()
+                return
+            end
+            self:Press()
+        end))
+    end))
+end
+
+function Launcher:Press()
+    local window = self.window
+    if not window or window.Destroyed then
+        return self
+    end
+    window:SetVisible(window.Hidden)
+    self:_paint()
+    return self
+end
+
+function Launcher:SetVisible(state)
+    if self.Destroyed then
+        return self
+    end
+    self.gui.Enabled = state ~= false
+    return self
+end
+
+function Launcher:SetPosition(position)
+    if self.Destroyed or typeof(position) ~= "UDim2" then
+        return self
+    end
+    self.root.Position = position
+    self:_clamp()
+    return self
+end
+
+function Launcher:Destroy()
+    if self.Destroyed then
+        return
+    end
+    self.Destroyed = true
+    self.maid:Destroy()
+end
+
+return Launcher
+
+end
 Slate_modules["ui/Section"] = function(require)
 local Util = require("core/Util")
 local Theme = require("core/Theme")
@@ -8922,6 +9178,7 @@ local Icons = require("ui/Icons")
 local Overlay = require("ui/Overlay")
 local Scroller = require("ui/Scroller")
 local Tab = require("ui/Tab")
+local Launcher = require("ui/Launcher")
 
 local Window = {}
 Window.__index = Window
@@ -9605,6 +9862,13 @@ function Window.new(library, config)
         self.ToggleKey = Enum.KeyCode.RightShift
     end
     self:SetToggleKey(self.ToggleKey)
+
+    if config.Launcher ~= false then
+        self.launcher = Launcher.new(self, config)
+        if self.launcher then
+            self.maid:Add(self.launcher)
+        end
+    end
 
     self.scale.Scale = 0.94
     self.root.BackgroundTransparency = 1
@@ -10506,6 +10770,30 @@ function Window:SetVisible(state)
         self.root.Visible = false
         self.gui.Enabled = false
     end
+    if self.launcher then
+        self.launcher:_paint()
+    end
+    return self
+end
+
+function Window:SetLauncherVisible(state)
+    if self.launcher then
+        self.launcher:SetVisible(state)
+    end
+    return self
+end
+
+function Window:SetLauncherIcon(name)
+    if self.launcher then
+        self.launcher:SetIcon(name)
+    end
+    return self
+end
+
+function Window:SetLauncherPosition(position)
+    if self.launcher then
+        self.launcher:SetPosition(position)
+    end
     return self
 end
 
@@ -10996,7 +11284,7 @@ function Slate.Cleanup()
     end
     local removed = 0
     for _, child in ipairs(parent:GetChildren()) do
-        if child:IsA("ScreenGui") and (child.Name == "Slate" or child.Name == "SlateToasts") then
+        if child:IsA("ScreenGui") and (child.Name == "Slate" or child.Name == "SlateToasts" or child.Name == "SlateLauncher") then
             child:Destroy()
             removed += 1
         end
