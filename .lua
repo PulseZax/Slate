@@ -1,4 +1,4 @@
---Made by Pulse Hub / Discord.gg/pulsezone - v0.31
+--Made by Pulse Hub / Discord.gg/pulsezone - V0.32
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -5922,6 +5922,7 @@ return Base.define({
 
         self.maid:Add(P.interactive(self.hitbox, {
             render = function(state)
+                self.hovered = state.hovered
                 field.set("hovered", state.hovered and not self.Disabled)
             end,
         }))
@@ -6001,8 +6002,13 @@ return Base.define({
                     local held = Input.isModifier(input.KeyCode) and {} or Input.modifiers()
                     self.Value = { Key = input.KeyCode, Modifiers = held }
                 end
-            elseif input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.MouseButton2
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if not self.hovered then
+                    paint(self)
+                    return
+                end
+                self.Value = { Key = input.UserInputType, Modifiers = {} }
+            elseif input.UserInputType == Enum.UserInputType.MouseButton2
                 or input.UserInputType == Enum.UserInputType.MouseButton3 then
                 self.Value = { Key = input.UserInputType, Modifiers = {} }
             end
