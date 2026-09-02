@@ -1,4 +1,4 @@
---Made by Pulse Hub / Discord.gg/pulsezone - V0.32
+--Made by Pulse Hub / Discord.gg/pulsezone - V0.33
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
