@@ -1,4 +1,4 @@
---Made by Pulse Hub / Discord.gg/pulsezone
+--Made by Pulse Hub / Discord.gg/pulsezone - v0.3
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -2528,6 +2528,29 @@ local SOURCES = {
 
 local maps = {}
 local defaultPack = "lucide"
+local fallbackPacks = { "lucide" }
+local VARIANTS = {
+    solar = { "", "-bold", "-linear", "-outline", "-broken" },
+}
+
+local function lookup(map, name, packName)
+    if not map then
+        return nil
+    end
+    local hit = map[name]
+    if hit then
+        return hit
+    end
+    for _, suffix in ipairs(VARIANTS[packName] or {}) do
+        if suffix ~= "" then
+            hit = map[name .. suffix]
+            if hit then
+                return hit
+            end
+        end
+    end
+    return nil
+end
 
 local function loadPack(name)
     local cached = maps[name]
@@ -2581,6 +2604,11 @@ end
 
 function Icons.pack()
     return defaultPack
+end
+
+function Icons.setFallbacks(list)
+    fallbackPacks = Util.list(list)
+    return true
 end
 
 function Icons.preload(names)
@@ -2760,7 +2788,7 @@ local function resolveImage(name)
             return nil
         end
         local map = loadPack(packName)
-        return map and map[iconName] or nil
+        return lookup(map, iconName, packName)
     end
 
     for _, key in ipairs(packOrder) do
@@ -2770,9 +2798,17 @@ local function resolveImage(name)
         end
     end
 
-    local map = loadPack(defaultPack)
-    if map and map[name] then
-        return map[name]
+    local hit = lookup(loadPack(defaultPack), name, defaultPack)
+    if hit then
+        return hit
+    end
+    for _, packName in ipairs(fallbackPacks) do
+        if packName ~= defaultPack then
+            hit = lookup(loadPack(packName), name, packName)
+            if hit then
+                return hit
+            end
+        end
     end
     return nil
 end
@@ -8494,8 +8530,9 @@ function Tab.new(window, config, parent)
         iconName = "circle"
     end
     if iconName then
+        local iconSize = self.docked and (window.DockIconSize or 17) or (window.TabIconSize or 13)
         local glyph, bindings = Icons.create(iconName, {
-            size = self.docked and 17 or 13,
+            size = iconSize,
             token = "Faint",
         })
         if glyph then
@@ -8505,7 +8542,7 @@ function Tab.new(window, config, parent)
             else
                 glyph.AnchorPoint = Vector2.new(0, 0.5)
                 glyph.Position = UDim2.new(0, 8, 0.5, 0)
-                textX = 28
+                textX = 8 + iconSize + 7
             end
             glyph.Parent = self.button
             self.icon = glyph
@@ -8518,7 +8555,7 @@ function Tab.new(window, config, parent)
     self.label = P.text({
         Name = "Label",
         Position = UDim2.fromOffset(textX, 0),
-        Size = UDim2.new(1, -textX - 10, 1, 0),
+        Size = UDim2.new(1, -textX - 4, 1, 0),
         Text = self.Name,
         TextSize = P.Size.Label,
         FontFace = P.Font.Medium,
@@ -8865,6 +8902,25 @@ function Tab:SetName(name)
     return self
 end
 
+function Tab:SetDim(state)
+    local dim = state == true
+    if self._dimmed == dim then
+        return self
+    end
+    self._dimmed = dim
+    local alpha = dim and 0.6 or 0
+    if self.icon then
+        Motion.cancel(self.icon)
+        if self.icon:IsA("ImageLabel") then
+            self.icon.ImageTransparency = alpha
+        elseif self.icon:IsA("TextLabel") then
+            self.icon.TextTransparency = alpha
+        end
+    end
+    self.label.TextTransparency = alpha
+    return self
+end
+
 function Tab:SetBadge(value)
     if value == nil or value == false or value == "" then
         self.badgeFrame.Visible = false
@@ -9004,6 +9060,7 @@ local function restore(window)
                 element.row.Visible = element.Visible
             end
         end
+        tab:SetDim(false)
     end
     window:SetStatus(window._statusBeforeSearch or "")
 end
@@ -9021,6 +9078,7 @@ local function apply(window, query)
 
     local total = 0
     local firstTab
+    local counts = {}
 
     for _, tab in ipairs(window.tabs) do
         local tabHits = 0
@@ -9036,11 +9094,18 @@ local function apply(window, query)
             section.frame.Visible = sectionHits > 0
             tabHits += sectionHits
         end
-        tab:SetBadge(tabHits > 0 and tabHits or nil)
+        counts[tab] = (counts[tab] or 0) + tabHits
+        if tab.parent then
+            counts[tab.parent] = (counts[tab.parent] or 0) + tabHits
+        end
         total += tabHits
         if tabHits > 0 and not firstTab then
             firstTab = tab
         end
+    end
+
+    for _, tab in ipairs(window.tabs) do
+        tab:SetDim((counts[tab] or 0) == 0)
     end
 
     if firstTab and window.activeTab ~= firstTab then
@@ -9081,9 +9146,6 @@ function Search.close(window)
         window.searchPending = nil
     end
 
-    for _, tab in ipairs(window.tabs) do
-        tab:SetBadge(tab._badgeBeforeSearch)
-    end
     restore(window)
 
     local titleHost = window.logo or window.titleLabel
@@ -9100,10 +9162,6 @@ function Search.open(window)
     end
     window.searching = true
     window._statusBeforeSearch = window.statusLabel.Text
-
-    for _, tab in ipairs(window.tabs) do
-        tab._badgeBeforeSearch = tab.badgeFrame.Visible and tab.badgeLabel.Text or nil
-    end
 
     local titleHost = window.logo or window.titleLabel
     titleHost.Visible = false
@@ -9525,6 +9583,8 @@ function Window.new(library, config)
 
     local titleX = 16
     self.IconSize = math.clamp(Util.num(config.IconSize, 28), 14, 44)
+    self.TabIconSize = math.clamp(Util.num(config.TabIconSize, 13), 10, 24)
+    self.DockIconSize = math.clamp(Util.num(config.DockIconSize, 17), 12, 28)
     self.iconSlot = P.frame({
         Name = "Icon",
         AnchorPoint = Vector2.new(0, 0.5),
@@ -9645,6 +9705,7 @@ function Window.new(library, config)
         Position = UDim2.fromOffset(0, 0),
         Size = UDim2.fromOffset(22, 30),
         BackgroundTransparency = 1,
+        Visible = false,
         ZIndex = 4,
         Parent = self.railFrame,
     })
@@ -9661,13 +9722,13 @@ function Window.new(library, config)
     self.marker = P.frame({
         Name = "TabMarker",
         AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.fromOffset(4, 0),
-        Size = UDim2.fromOffset(2, 0),
+        Position = UDim2.fromOffset(3, 0),
+        Size = UDim2.fromOffset(3, 0),
         BackgroundTransparency = 0,
         ZIndex = 6,
         Parent = self.railFrame,
     })
-    P.corner(self.marker, 1)
+    P.corner(self.marker, 2)
     self.maid:Add(Theme.bind(self.marker, "BackgroundColor3", "Accent"))
 
     self.maid:Add(self.rail.frame:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
@@ -9935,54 +9996,43 @@ function Window:_setupResize(config)
     self.resizer = grip
     grip.Visible = self.Resizable ~= false
 
-    local bloom = P.frame({
-        Name = "Bloom",
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, 2, 1, 2),
-        Size = UDim2.fromOffset(30, 30),
-        BackgroundTransparency = 1,
-        ZIndex = 19,
-        Parent = grip,
-    })
-    P.corner(bloom, 12)
-    self.maid:Add(Theme.bind(bloom, "BackgroundColor3", "Accent"))
-
-    local notches = {}
-    local notchBindings = {}
+    local dots = {}
+    local dotBindings = {}
     local spec = {
-        { length = 6, at = 0.80 },
-        { length = 11, at = 0.62 },
-        { length = 16, at = 0.44 },
+        { x = 0.76, y = 0.76 },
+        { x = 0.52, y = 0.76 },
+        { x = 0.76, y = 0.52 },
+        { x = 0.28, y = 0.76 },
+        { x = 0.52, y = 0.52 },
+        { x = 0.76, y = 0.28 },
     }
     for index, entry in ipairs(spec) do
-        local bar = P.frame({
-            Name = "Notch" .. index,
+        local dot = P.frame({
+            Name = "Dot" .. index,
             AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.fromScale(entry.at, entry.at),
-            Size = UDim2.fromOffset(entry.length, 2),
-            Rotation = -45,
-            BackgroundTransparency = 0.2,
+            Position = UDim2.fromScale(entry.x, entry.y),
+            Size = UDim2.fromOffset(3, 3),
+            BackgroundTransparency = 0.45,
             ZIndex = 21,
             Parent = grip,
         })
-        P.corner(bar, 1)
-        local binding = Theme.bind(bar, "BackgroundColor3", "Muted")
+        Util.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = dot })
+        local binding = Theme.bind(dot, "BackgroundColor3", "Muted")
         self.maid:Add(binding)
-        notches[index] = bar
-        notchBindings[index] = binding
+        dots[index] = dot
+        dotBindings[index] = binding
     end
 
     self.maid:Add(P.interactive(grip, {
         render = function(state)
             local lit = state.hovered or state.pressed
-            for index, bar in ipairs(notches) do
-                Theme.rebind(notchBindings[index], lit and "Accent" or "Muted")
-                Motion.hover(bar, {
-                    BackgroundTransparency = lit and 0 or 0.2,
-                    Size = UDim2.fromOffset(spec[index].length + (lit and 2 or 0), 2),
+            for index, dot in ipairs(dots) do
+                Theme.rebind(dotBindings[index], lit and "Accent" or "Muted")
+                Motion.hover(dot, {
+                    BackgroundTransparency = lit and 0 or 0.45,
+                    Size = UDim2.fromOffset(lit and 4 or 3, lit and 4 or 3),
                 })
             end
-            Motion.hover(bloom, { BackgroundTransparency = lit and 0.88 or 1 })
         end,
     }))
 
@@ -9993,10 +10043,14 @@ function Window:_setupResize(config)
         end
         local start, origin
         dragMaid:Clean()
+        self._resizing = true
+        self:_updateHint()
         Theme.rebind(self.hintBinding, "Accent")
         dragMaid:Add(function()
             if not self.Destroyed then
+                self._resizing = false
                 Theme.rebind(self.hintBinding, "Faint")
+                self:_updateHint()
             end
         end)
         dragMaid:Add(Input.PointerMoved:Connect(function(position)
@@ -10050,7 +10104,7 @@ function Window:_clampToViewport()
     self.root.Position = UDim2.fromOffset(x, y)
 end
 
-local MARKER_H = 16
+local MARKER_H = 18
 local RAIL_ICON = 46
 local RAIL_SIDE = 16
 local RAIL_TEXT_X = 28
@@ -10280,7 +10334,7 @@ function Window:_moveMarker(tab, animate)
     end
     tab = tab and tab:Root() or nil
     if not tab or tab.Destroyed or not tab.button.Parent then
-        Motion.play(self.marker, { Size = UDim2.fromOffset(2, 0) }, { duration = Motion.Duration.Fast })
+        Motion.play(self.marker, { Size = UDim2.fromOffset(3, 0) }, { duration = Motion.Duration.Fast })
         Motion.play(self.markerGlow, { BackgroundTransparency = 1 }, { duration = Motion.Duration.Fast })
         return
     end
@@ -10300,8 +10354,8 @@ function Window:_moveMarker(tab, animate)
 
     if not animate or not Motion.isEnabled() or self.marker.Size.Y.Offset == 0 then
         Motion.set(self.marker, {
-            Position = UDim2.fromOffset(4, target),
-            Size = UDim2.fromOffset(2, MARKER_H),
+            Position = UDim2.fromOffset(3, target),
+            Size = UDim2.fromOffset(3, MARKER_H),
         })
         Motion.set(self.markerGlow, {
             Position = UDim2.fromOffset(0, target),
@@ -10313,8 +10367,8 @@ function Window:_moveMarker(tab, animate)
     local distance = math.abs(target - current)
     if distance < 1 then
         Motion.play(self.marker, {
-            Position = UDim2.fromOffset(4, target),
-            Size = UDim2.fromOffset(2, MARKER_H),
+            Position = UDim2.fromOffset(3, target),
+            Size = UDim2.fromOffset(3, MARKER_H),
         }, { duration = Motion.Duration.Fast })
         Motion.play(self.markerGlow, { Position = UDim2.fromOffset(0, target) }, {
             duration = Motion.Duration.Fast,
@@ -10325,7 +10379,7 @@ function Window:_moveMarker(tab, animate)
 
     Motion.cancel(self.marker)
     Motion.play(self.marker, {
-        Position = UDim2.fromOffset(4, midpoint),
+        Position = UDim2.fromOffset(3, midpoint),
         Size = UDim2.fromOffset(2, MARKER_H + distance),
     }, {
         duration = 0.16,
@@ -10339,8 +10393,8 @@ function Window:_moveMarker(tab, animate)
                 return
             end
             Motion.play(self.marker, {
-                Position = UDim2.fromOffset(4, target),
-                Size = UDim2.fromOffset(2, MARKER_H),
+                Position = UDim2.fromOffset(3, target),
+                Size = UDim2.fromOffset(3, MARKER_H),
             }, { duration = 0.22, easing = Enum.EasingStyle.Quint })
         end,
     })
@@ -10829,7 +10883,8 @@ function Window:_updateHint()
     if self.Destroyed or not self.hintLabel then
         return
     end
-    if self.HintMode == "keybind" then
+    local mode = self.HintMode or "size"
+    if mode == "keybind" or (mode == "size" and not self._resizing) then
         self.hintLabel.Text = self.ToggleHint or ""
         return
     end
