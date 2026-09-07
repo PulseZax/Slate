@@ -1,4 +1,4 @@
---Made by Pulse Hub / Discord.gg/pulsezone - V0.33
+--Made by Pulse Hub / Discord.gg/pulsezone --1
 local Slate_modules = {}
 local Slate_cache = {}
 local function Slate_require(name)
@@ -526,7 +526,7 @@ local PALETTES = {
         Muted = Color3.fromRGB(128, 133, 140),
         Faint = Color3.fromRGB(80, 84, 90),
         Accent = Color3.fromRGB(168, 186, 200),
-        OnAccent = Color3.fromRGB(12, 14, 16),
+        OnAccent = Color3.fromRGB(14, 15, 16),
         Success = Color3.fromRGB(122, 190, 142),
         Warning = Color3.fromRGB(216, 176, 106),
         Danger = Color3.fromRGB(214, 102, 102),
@@ -4375,6 +4375,43 @@ function Element:SetDescription(text)
     return self
 end
 
+local THUMB = 26
+local THUMB_GAP = 10
+
+function Element:SetImage(asset)
+    if asset == nil or asset == false or asset == "" then
+        if self.thumb then
+            self.thumb.Visible = false
+        end
+        if self.thumbPad then
+            self.thumbPad.PaddingLeft = UDim.new()
+        end
+        return self
+    end
+    local image = asset
+    if type(image) == "number" then
+        image = "rbxassetid://" .. tostring(image)
+    end
+    if not self.thumb then
+        self.thumb = P.image({
+            Name = "Thumb",
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            Size = UDim2.fromOffset(THUMB, THUMB),
+            BackgroundTransparency = 0,
+            ZIndex = 2,
+            Parent = self.row,
+        })
+        P.corner(self.thumb, Theme.number("RadiusSm", 4))
+        self.maid:Add(Theme.bind(self.thumb, "BackgroundColor3", "Elevated"))
+        self.thumbPad = Util.new("UIPadding", { Parent = self.left })
+    end
+    self.thumb.Image = image
+    self.thumb.Visible = true
+    self.thumbPad.PaddingLeft = UDim.new(0, THUMB + THUMB_GAP)
+    return self
+end
+
 function Element:SetVisible(state)
     local visible = state ~= false
     if self.Visible == visible then
@@ -4652,6 +4689,10 @@ function Base.define(spec)
 
         if spec.build then
             spec.build(self, config)
+        end
+
+        if config.Image ~= nil then
+            self:SetImage(config.Image)
         end
 
         if self.Description then
@@ -5193,7 +5234,7 @@ local Scroller = require("ui/Scroller")
 local Icons = require("ui/Icons")
 local P = require("ui/Primitives")
 
-local CONTROL_W = 210
+local CONTROL_W = 184
 local MIN_W = 96
 local OPTION_H = 28
 local PANEL_MAX = 232
@@ -5261,7 +5302,7 @@ end
 local function paint(self)
     local text, muted = selectionText(self)
     self.display.Text = text
-    Theme.rebind(self.displayBinding, muted and "Faint" or "Text")
+    Theme.rebind(self.displayBinding, muted and "Muted" or "Text")
     local preview = not self.Multi and not muted and fontFor(self, self.Value) or nil
     if preview then
         P.lockFont(self.display, preview)
@@ -5269,7 +5310,7 @@ local function paint(self)
         P.lockFont(self.display, nil)
         self.display.FontFace = P.Font.Regular
     end
-    self:HugControl(text, self.display.FontFace, self.display.TextSize, 22, MIN_W, CONTROL_W)
+    self:SetControlWidth(CONTROL_W)
 end
 
 local function isSelected(self, value)
@@ -5505,7 +5546,7 @@ return Base.define({
             TextSize = P.Size.Body,
             Parent = self.pill,
         })
-        self.displayBinding = Theme.bind(self.display, "TextColor3", "Faint")
+        self.displayBinding = Theme.bind(self.display, "TextColor3", "Muted")
         self.maid:Add(self.displayBinding)
 
         local chevron, chevronBindings = Icons.create("chevron-down", { size = 11, token = "Faint" })
@@ -5670,7 +5711,7 @@ local Log = require("core/Log")
 local Base = require("elements/Base")
 local P = require("ui/Primitives")
 
-local CONTROL_W = 176
+local CONTROL_W = 184
 
 local function maskText(text)
     return string.rep("\u{2022}", #text)
@@ -5850,7 +5891,7 @@ local Input = require("core/Input")
 local Base = require("elements/Base")
 local P = require("ui/Primitives")
 
-local CONTROL_W = 168
+local CONTROL_W = 184
 local MIN_W = 46
 
 local MODES = { Toggle = true, Hold = true, Always = true }
@@ -5867,7 +5908,7 @@ end
 
 local function paint(self)
     self.text.Text = label(self)
-    self:HugControl(self.text.Text, self.text.FontFace, self.text.TextSize, 2, MIN_W, CONTROL_W)
+    self:SetControlWidth(CONTROL_W)
     Theme.rebind(self.textBinding, self.capturing and "Accent" or (self.Value and self.Value.Key and "Text" or "Faint"))
     if self.field then
         self.field.set("active", self.capturing)
@@ -6077,7 +6118,7 @@ local Input = require("core/Input")
 local Base = require("elements/Base")
 local P = require("ui/Primitives")
 
-local CONTROL_W = 106
+local CONTROL_W = 184
 local PANEL_W = 202
 local SV_H = 96
 local PAD = 10
@@ -8612,8 +8653,26 @@ function Tab.new(window, config, parent)
             end
         end,
         onClick = function()
-            if not self.Disabled then
+            if self.Disabled then
+                return
+            end
+            local ok = pcall(function()
                 window:SelectTab(self)
+            end)
+            if not ok then
+                task.spawn(function()
+                    for _, other in ipairs(window.tabs) do
+                        if other ~= self and other.page then
+                            pcall(function()
+                                other.page.Visible = false
+                            end)
+                        end
+                    end
+                    window.activeTab = nil
+                    pcall(function()
+                        window:SelectTab(self)
+                    end)
+                end)
             end
         end,
     }))
@@ -8924,6 +8983,46 @@ function Tab:SetDim(state)
         end
     end
     self.label.TextTransparency = alpha
+    return self
+end
+
+function Tab:SetBadgeDot(state)
+    if not state then
+        if self.badgeDotPulse then
+            self.badgeDotPulse:Disconnect()
+            self.badgeDotPulse = nil
+        end
+        if self.badgeDot then
+            self.badgeDot:Destroy()
+            self.badgeDot = nil
+        end
+        return self
+    end
+    if self.badgeDot then
+        return self
+    end
+    local span = self.docked and 6 or 5
+    local dot = P.frame({
+        Name = "BadgeDot",
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, self.docked and -4 or -6, 0, self.docked and 4 or 6),
+        Size = UDim2.fromOffset(span, span),
+        ZIndex = 9,
+        Parent = self.button,
+    })
+    Util.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = dot })
+    self.maid:Add(dot)
+    self.maid:Add(Theme.bind(dot, "BackgroundColor3", "Danger"))
+    self.badgeDot = dot
+    local clock = 0
+    self.badgeDotPulse = game:GetService("RunService").RenderStepped:Connect(function(delta)
+        if not dot.Parent then
+            return
+        end
+        clock += math.min(delta, 0.2)
+        dot.BackgroundTransparency = 0.08 + ((math.sin(clock * 3.2) + 1) * 0.5) * 0.42
+    end)
+    self.maid:Add(self.badgeDotPulse)
     return self
 end
 
@@ -9682,10 +9781,9 @@ function Window.new(library, config)
     self.railFrame = P.frame({
         Name = "Rail",
         Size = UDim2.new(0, mode.rail, 1, 0),
-        BackgroundTransparency = 0.55,
+        BackgroundTransparency = 1,
         Parent = self.body,
     })
-    self.maid:Add(Theme.bind(self.railFrame, "BackgroundColor3", "Surface"))
     local railLine, railLineBinding = P.hairline(self.railFrame, {
         vertical = true,
         fade = true,
@@ -10656,6 +10754,9 @@ function Window:SetLoading(state, text)
         end
         local veil = self.loader
         self.loader = nil
+        self.loaderTrack = nil
+        self.loaderFill = nil
+        self.loaderDetail = nil
         if self.loaderTick then
             self.loaderTick:Disconnect()
             self.loaderTick = nil
@@ -10796,6 +10897,41 @@ function Window:SetLoading(state, text)
     })
     self.maid:Add(Theme.bind(self.loaderLabel, "TextColor3", "Muted"))
 
+    local track = P.frame({
+        Name = "Track",
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 42),
+        Size = UDim2.fromOffset(208, 3),
+        BackgroundTransparency = 0.92,
+        Parent = veil,
+    })
+    Util.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
+    self.maid:Add(Theme.bind(track, "BackgroundColor3", "Text"))
+    self.loaderTrack = track
+
+    local fill = P.frame({
+        Name = "Fill",
+        Size = UDim2.new(0, 0, 1, 0),
+        BackgroundTransparency = 0,
+        Parent = track,
+    })
+    Util.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
+    self.maid:Add(Theme.bind(fill, "BackgroundColor3", "Accent"))
+    self.loaderFill = fill
+
+    self.loaderDetail = P.text({
+        Name = "Detail",
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 56),
+        Size = UDim2.new(1, -40, 0, 14),
+        Text = "",
+        TextSize = P.Size.Small,
+        FontFace = P.Font.Mono,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = veil,
+    })
+    self.maid:Add(Theme.bind(self.loaderDetail, "TextColor3", "Muted"))
+
     veil.GroupTransparency = 1
     Motion.play(veil, { GroupTransparency = 0 }, {
         duration = Motion.Duration.Base,
@@ -10814,6 +10950,48 @@ function Window:SetLoading(state, text)
         end
     end)
 
+    return self
+end
+
+function Window:SetLoadingProgress(alpha, detail)
+    if not self.loader then
+        return self
+    end
+    local value = Util.clamp(Util.num(alpha, 0), 0, 1)
+    if self.loaderFill then
+        Motion.play(self.loaderFill, { Size = UDim2.new(value, 0, 1, 0) }, {
+            duration = Motion.Duration.Fast,
+            easing = Enum.EasingStyle.Sine,
+        })
+    end
+    if self.loaderDetail and detail ~= nil then
+        self.loaderDetail.Text = Util.str(detail, "")
+    end
+    return self
+end
+
+function Window:MoveTab(tab, index)
+    if tab == nil or tab.parent ~= nil then
+        return self
+    end
+    local roots = {}
+    for _, entry in ipairs(self.tabs) do
+        if entry.parent == nil then
+            roots[#roots + 1] = entry
+        end
+    end
+    local from = Util.indexOf(roots, tab)
+    if not from then
+        return self
+    end
+    local target = math.clamp(math.floor(tonumber(index) or from), 1, #roots)
+    table.remove(roots, from)
+    table.insert(roots, target, tab)
+    for order, entry in ipairs(roots) do
+        if entry.button then
+            entry.button.LayoutOrder = order
+        end
+    end
     return self
 end
 
@@ -10935,7 +11113,7 @@ function Window:SetIcon(name)
     end
 
     local box = self.IconSize or 28
-    local glyph, bindings = Icons.create(name, { size = math.floor(box * 0.72), token = "Accent" })
+    local glyph, bindings = Icons.create(name, { size = math.floor(box * 0.72), token = "Text" })
     if not glyph then
         self.iconSlot.Visible = false
         return self
